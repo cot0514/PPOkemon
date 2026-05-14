@@ -1,0 +1,18 @@
+# 파이썬 관련
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# 강화학습 모델 및 로그 (절대 올라가면 안 됨)
+*.pth
+*.pt
+*.zip
+logs/
+runs/
+tensorboard/
+
+# 환경 변수 및 기타
+.env
+.DS_Store
