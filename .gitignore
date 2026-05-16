@@ -1,6 +1,7 @@
 # 파이썬 관련
 __pycache__/
 *.py[cod]
+.pytest_cache
 .venv/
 venv/
 env/
@@ -16,3 +17,4 @@ tensorboard/
 # 환경 변수 및 기타
 .env
 .DS_Store
+.cursorrules
