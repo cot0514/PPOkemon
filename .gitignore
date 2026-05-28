@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 env/
+__pycache__/
 
 # 강화학습 모델 및 로그 (절대 올라가면 안 됨)
 *.pth
