@@ -45,6 +45,8 @@ def _make_battle(
 MY_FULL: dict[str, float] = {"a": 1.0, "b": 1.0, "c": 1.0}
 OPP_FULL: dict[str, float] = {"x": 1.0, "y": 1.0, "z": 1.0}
 
+TP = DEFAULT_CONFIG.turn_penalty  # 0.005
+
 
 # ---------------------------------------------------------------------------
 # reset / 첫 호출
@@ -78,36 +80,36 @@ def test_reset_clears_snapshot() -> None:
 
 
 def test_damage_dealt_gives_positive_reward() -> None:
-    """상대 HP가 감소하면 hp_delta_scale × Δ만큼 양의 보상이 발생해야 한다."""
+    """상대 HP가 감소하면 hp_delta_scale × Δ - turn_penalty 보상이 발생해야 한다."""
     calc = RewardCalculator()
     cfg = DEFAULT_CONFIG
 
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
 
     r = calc.compute(_make_battle({"a": 1.0}, {"x": 0.5}))
-    assert r == pytest.approx(cfg.hp_delta_scale * 0.5)
+    assert r == pytest.approx(cfg.hp_delta_scale * 0.5 - cfg.turn_penalty)
 
 
 def test_damage_taken_gives_negative_reward() -> None:
-    """내 HP가 감소하면 -hp_delta_scale × Δ만큼 음의 보상이 발생해야 한다."""
+    """내 HP가 감소하면 -hp_delta_scale × Δ - turn_penalty 보상이 발생해야 한다."""
     calc = RewardCalculator()
     cfg = DEFAULT_CONFIG
 
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
 
     r = calc.compute(_make_battle({"a": 0.6}, {"x": 1.0}))
-    assert r == pytest.approx(-cfg.hp_delta_scale * 0.4)
+    assert r == pytest.approx(-cfg.hp_delta_scale * 0.4 - cfg.turn_penalty)
 
 
 def test_mutual_damage_net_reward() -> None:
-    """쌍방 딜 시 보상은 (opp_delta - my_delta) × scale 이어야 한다."""
+    """쌍방 딜 시 보상은 (opp_delta - my_delta) × scale - turn_penalty 이어야 한다."""
     calc = RewardCalculator()
     cfg = DEFAULT_CONFIG
 
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
 
     r = calc.compute(_make_battle({"a": 0.7}, {"x": 0.6}))
-    expected = cfg.hp_delta_scale * (0.4 - 0.3)
+    expected = cfg.hp_delta_scale * (0.4 - 0.3) - cfg.turn_penalty
     assert r == pytest.approx(expected)
 
 
@@ -121,8 +123,8 @@ def test_reward_accumulates_across_turns() -> None:
     r1 = calc.compute(_make_battle({"a": 1.0}, {"x": 0.7}))
     r2 = calc.compute(_make_battle({"a": 1.0}, {"x": 0.4}))
 
-    assert r1 == pytest.approx(cfg.hp_delta_scale * 0.3)
-    assert r2 == pytest.approx(cfg.hp_delta_scale * 0.3)
+    assert r1 == pytest.approx(cfg.hp_delta_scale * 0.3 - cfg.turn_penalty)
+    assert r2 == pytest.approx(cfg.hp_delta_scale * 0.3 - cfg.turn_penalty)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +140,7 @@ def test_ko_gives_bonus() -> None:
     calc.compute(_make_battle({"a": 1.0}, {"x": 0.1}))
 
     r = calc.compute(_make_battle({"a": 1.0}, {"x": 0.0}))
-    expected = cfg.hp_delta_scale * 0.1 + cfg.ko_reward * 1
+    expected = cfg.hp_delta_scale * 0.1 + cfg.ko_reward * 1 - cfg.turn_penalty
     assert r == pytest.approx(expected)
 
 
@@ -150,7 +152,7 @@ def test_faint_gives_penalty() -> None:
     calc.compute(_make_battle({"a": 0.1}, {"x": 1.0}))
 
     r = calc.compute(_make_battle({"a": 0.0}, {"x": 1.0}))
-    expected = -cfg.hp_delta_scale * 0.1 - cfg.faint_penalty * 1
+    expected = -cfg.hp_delta_scale * 0.1 - cfg.faint_penalty * 1 - cfg.turn_penalty
     assert r == pytest.approx(expected)
 
 
@@ -167,27 +169,29 @@ def test_multiple_ko_and_faint_same_turn() -> None:
         - cfg.hp_delta_scale * 0.1  # my HP 감소
         + cfg.ko_reward             # 상대 기절
         - cfg.faint_penalty         # 내 기절
+        - cfg.turn_penalty
     )
     assert r == pytest.approx(expected)
 
 
 # ---------------------------------------------------------------------------
-# 교체 — switch_cost 없음: HP 변화만 반영
+# 교체 — turn_penalty 반영
 # ---------------------------------------------------------------------------
 
 
-def test_switch_turn_no_attack_no_reward() -> None:
-    """교체 턴에 HP 변화가 없으면 보상도 0이어야 한다 (switch_cost 없음)."""
+def test_switch_turn_no_attack_turn_penalty() -> None:
+    """교체 턴에 HP 변화가 없으면 -turn_penalty만 발생해야 한다."""
     calc = RewardCalculator()
+    cfg = DEFAULT_CONFIG
 
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
 
     r = calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
-    assert r == pytest.approx(0.0)
+    assert r == pytest.approx(-cfg.turn_penalty)
 
 
 def test_switch_turn_entry_damage_penalized() -> None:
-    """교체 후 상대 공격을 맞으면 my_delta 패널티만 발생해야 한다."""
+    """교체 후 상대 공격을 맞으면 my_delta 패널티 + turn_penalty가 발생해야 한다."""
     calc = RewardCalculator()
     cfg = DEFAULT_CONFIG
 
@@ -195,7 +199,7 @@ def test_switch_turn_entry_damage_penalized() -> None:
 
     # 교체 턴: 공격 없음(opp HP 그대로) + 입장 피해(내 HP 감소)
     r = calc.compute(_make_battle({"a": 0.7}, {"x": 1.0}))
-    assert r == pytest.approx(-cfg.hp_delta_scale * 0.3)
+    assert r == pytest.approx(-cfg.hp_delta_scale * 0.3 - cfg.turn_penalty)
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +238,7 @@ def test_custom_config_hp_scale() -> None:
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
     r = calc.compute(_make_battle({"a": 1.0}, {"x": 0.5}))
 
-    assert r == pytest.approx(1.0 * 0.5)
+    assert r == pytest.approx(1.0 * 0.5 - cfg.turn_penalty)
 
 
 def test_custom_config_win_reward() -> None:
@@ -245,19 +249,40 @@ def test_custom_config_win_reward() -> None:
     assert calc.terminal(b) == pytest.approx(2.0)
 
 
+def test_custom_config_turn_penalty() -> None:
+    """커스텀 turn_penalty가 매 턴 보상에 반영되어야 한다."""
+    cfg = RewardConfig(turn_penalty=0.0)
+    calc = RewardCalculator(config=cfg)
+
+    calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
+    r = calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
+    assert r == pytest.approx(0.0)
+
+
+def test_switch_cost_in_config() -> None:
+    """RewardConfig에 switch_cost가 기본값 0.1로 존재해야 한다."""
+    cfg = DEFAULT_CONFIG
+    assert cfg.switch_cost == pytest.approx(0.1)
+
+
+def test_custom_switch_cost() -> None:
+    """커스텀 switch_cost를 설정할 수 있어야 한다."""
+    cfg = RewardConfig(switch_cost=0.05)
+    assert cfg.switch_cost == pytest.approx(0.05)
+
+
 # ---------------------------------------------------------------------------
 # 신규 포켓몬 등장 (상대 팀 점진적 공개)
 # ---------------------------------------------------------------------------
 
 
 def test_newly_revealed_opponent_no_delta() -> None:
-    """이전 스냅샷에 없던 상대 포켓몬이 등장해도 HP delta가 0이어야 한다."""
+    """이전 스냅샷에 없던 상대 포켓몬이 등장해도 HP delta는 0이어야 한다."""
     calc = RewardCalculator()
+    cfg = DEFAULT_CONFIG
 
     calc.compute(_make_battle({"a": 1.0}, {"x": 1.0}))
 
-    # y가 새로 공개됨 (x HP 변화 없음)
+    # y가 새로 공개됨 (x HP 변화 없음) — delta=0, turn_penalty만 발생
     r = calc.compute(_make_battle({"a": 1.0}, {"x": 1.0, "y": 0.8}))
-
-    # y는 이전 스냅샷 없음 → delta = 0. x 변화 없음 → 전체 reward = 0
-    assert r == pytest.approx(0.0)
+    assert r == pytest.approx(-cfg.turn_penalty)

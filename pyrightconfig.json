@@ -1,0 +1,10 @@
+{
+  "pythonVersion": "3.10",
+  "venvPath": "C:/Users/cot05/anaconda3/envs",
+  "venv": "ppokemon",
+  "pythonPlatform": "Windows",
+  "extraPaths": [
+    "."
+  ],
+  "typeCheckingMode": "basic"
+}

@@ -25,7 +25,7 @@ Phase 1에서 아르세우스 9종의 스탯은 완전히 동일하므로
     -hp_delta_scale × Δ내HP        내 HP 감소분 → 피딜 패널티
     +ko_reward × 상대기절수         KO 보너스
     -faint_penalty × 내기절수       내 기절 패널티
-    -switch_cost (임의 교체 1회)    불필요한 교체 억제
+    -turn_penalty (매 턴)           배틀 장기화 억제 (교체 루프 방지)
 
   에피소드 종료 (sparse reward):
     +win_reward  (승리)
@@ -56,13 +56,12 @@ Phase 1에서 아르세우스 9종의 스탯은 완전히 동일하므로
 
   최대 신호 차이 (자속SE ↔ 견제NVE): 0.250 - 0.042 ≈ 0.208  (충분히 유의미)
 
-  switch_cost = 0.0 (제거):
-    교체 턴은 게임 메커니즘 자체가 자연적인 비용을 만든다:
-      - 공격 포기 → opp_delta = 0 (기술을 쓰는 턴 대비 손해)
-      - 상대의 공격을 새 포켓몬이 맞음 → my_delta 발생
-    인위적인 switch_cost를 추가하면 이 두 패널티와 합산되어
-    "교체 = 세 가지 손해"로 초기 학습을 왜곡하므로 제거한다.
-    불필요한 교체 억제는 게임 메커니즘의 자연적 비용으로 충분하다.
+  turn_penalty = 0.005:
+    매 턴 소액 패널티로 배틀 장기화를 억제한다.
+    상대(RandomPoolOpponent)가 항상 공격하므로 에이전트가 교체만 반복하면
+    my_delta 패널티 + turn_penalty 누적으로 자연스럽게 공격을 선호하게 된다.
+    값이 너무 크면 KO/승리 보상을 압도하여 학습이 불안정해지므로
+    KO 보상(0.25)의 2% 수준인 0.005로 설정한다.
 """
 
 from __future__ import annotations
@@ -70,7 +69,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from poke_env.environment import AbstractBattle
-
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +94,20 @@ class RewardConfig:
 
     lose_reward: float = 1.0
     """에피소드 패배 시 단발 패널티 (부호는 terminal()에서 음수 처리)."""
+
+    turn_penalty: float = 0.005
+    """매 턴 부과하는 소액 패널티. 배틀 장기화 및 교체 루프를 억제한다."""
+
+    switch_matchup_scale: float = 0.3
+    """교체로 인한 타입 상성 변화에 곱하는 스케일.
+
+    delta = after_matchup_value - before_matchup_value  (각각 +1/0/-1)
+    reward += delta * switch_matchup_scale
+
+    불리→유리(delta=+2): +0.6  불리→중립(delta=+1): +0.3
+    중립→불리(delta=-1): -0.3  유리→불리(delta=-2): -0.6
+    같은 상성 유지(delta=0):    0.0 (패널티·보너스 없음)
+    강제 교체(기절 후)에는 적용하지 않는다."""
 
 
 DEFAULT_CONFIG = RewardConfig()
@@ -187,6 +199,7 @@ class RewardCalculator:
             - self.cfg.hp_delta_scale * my_delta          # 피딜 패널티
             + self.cfg.ko_reward * opp_fainted            # KO 보너스
             - self.cfg.faint_penalty * my_fainted         # 기절 패널티
+            - self.cfg.turn_penalty                       # 배틀 장기화 패널티
         )
 
         # 다음 턴을 위해 스냅샷 갱신
