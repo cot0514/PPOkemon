@@ -23,7 +23,7 @@ from sb3_contrib import MaskablePPO
 from agents.opponents import MaxDamageOpponent, RandomPoolOpponent
 from data.pokemon_pool import PHASE1_POKEMON
 from data.teams import RandomPoolTeambuilder
-from data.type_chart import PHASE1_TYPES, matchup_value, species_to_type
+from data.type_chart import PHASE1_TYPES, SUPER_EFFECTIVE, matchup_value, species_to_type
 from envs.env import PPOkemonEnv
 from envs.reward import RewardConfig
 from envs.spaces import N_MOVES
@@ -119,6 +119,13 @@ def evaluate(args: argparse.Namespace) -> None:
         "불리": Counter(),
         "중립": Counter(),
     }
+    # 기술 선택 세부 분류: {상성: {기술종류: 횟수}}
+    # 기술종류: 자속기 / 견제기(약점) / 견제기(비효과) / 선공기
+    move_detail: dict[str, Counter[str]] = {
+        "유리": Counter(),
+        "불리": Counter(),
+        "중립": Counter(),
+    }
 
     for battle_idx in range(args.n_battles):
         obs, _ = env.reset()
@@ -157,6 +164,19 @@ def evaluate(args: argparse.Namespace) -> None:
                     if battle.available_moves and action < len(battle.available_moves):
                         mv = battle.available_moves[action]
                         action_label = f"기술:{mv.id}"
+                        # 기술 세부 분류
+                        # Judgment는 플레이트 타입을 poke-env가 NORMAL로 반환하므로
+                        # move ID로 자속기를 판별한다.
+                        opp_t = species_to_type(opp_species)
+                        if mv.priority > 0:
+                            move_kind = "선공기"
+                        elif mv.id.lower() == "judgment":
+                            move_kind = "자속기"
+                        elif opp_t is not None and opp_t in SUPER_EFFECTIVE.get(mv.type, []):
+                            move_kind = "견제기(약점)"
+                        else:
+                            move_kind = "견제기(비효과)"
+                        move_detail[situation][move_kind] += 1
                     else:
                         action_label = "기술(없음)"
                     action_by_matchup[situation]["기술"] += 1
@@ -206,10 +226,28 @@ def evaluate(args: argparse.Namespace) -> None:
         )
 
     print(f"\n{'='*55}")
+    print("[기술 선택 세부 분석]")
+    print(f"  {'':4s}  {'자속기':>10s}  {'견제기(약점)':>12s}  {'견제기(비효과)':>14s}  {'선공기':>8s}")
+    for situation in ("유리", "중립", "불리"):
+        d = move_detail[situation]
+        total_m = sum(d.values())
+        if total_m == 0:
+            continue
+
+        def _fmt(k: str) -> str:
+            n = d[k]
+            return f"{n:4d}회({n / total_m:4.1%})"
+
+        print(
+            f"  {situation:2s}:  {_fmt('자속기')}  {_fmt('견제기(약점)')}"
+            f"  {_fmt('견제기(비효과)')}  {_fmt('선공기')}"
+        )
+
+    print(f"\n{'='*55}")
     print("[해석 기준]")
     print("  불리 상황에서 교체 비율이 높으면 → 타입 교체 전략 학습됨")
     print("  유리 상황에서 교체 비율이 낮으면  → 유리한 위치 유지 학습됨")
-    print("  상황에 관계없이 교체 비율이 동일  → 타입 무관 행동")
+    print("  불리 상황 기술 중 견제기(약점) 비율이 높으면 → 커버리지 활용 학습됨")
     print(f"{'='*55}")
 
 
