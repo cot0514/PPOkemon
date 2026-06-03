@@ -30,20 +30,19 @@ node pokemon-showdown
 ## PS 서버 커스텀 포맷 설정 (필수)
 
 아르세우스는 Uber 티어이므로 `gen9ou`에서 불법입니다.
-`<showdown-root>/config/formats.ts` 에 아래 포맷을 추가해야 학습이 시작됩니다.
+포맷은 `<showdown-root>/config/custom-formats.ts`에 이미 등록되어 있습니다.
 
-```typescript
-{
-    name: "Gen 9 PPOkemon Phase 1",
-    mod: "gen9",
-    ruleset: ["Standard"],
-    banlist: [],
-    team: "random",  // 팀빌더가 직접 팀을 전달하므로 실질적으로 무시됨
-},
+| 포맷 ID | 대상 페이즈 |
+|---------|------------|
+| `gen9ppokemonphase1` | Phase 1 (아르세우스 9종) |
+| `gen9ppokemonphase2` | Phase 2 (아르세우스 18종) |
+
+포맷 변경 후 서버를 재시작해야 반영됩니다.
+
+```bash
+# 서버 재시작
+node pokemon-showdown
 ```
-
-포맷 ID는 `gen9ppokemonphase1` (소문자, 공백 제거)이어야 합니다.
-`train.py`의 `BATTLE_FORMAT = "gen9ppokemonphase1"` 과 일치해야 합니다.
 
 ---
 
@@ -253,17 +252,20 @@ reward += delta × switch_matchup_scale
 ## 학습 실행
 
 ```bash
-# 기본 (랜덤 상대, 8개 병렬 환경, 500K 스텝)
-python train.py
+# Phase 1 신규 학습 (기본: 랜덤 상대, 8개 병렬 환경, 500K 스텝)
+python train.py --phase 1
+
+# Phase 2 전이학습 (Phase 1 가중치 로드)
+python train.py --phase 2 --load-model models/ppokemon_phase1
 
 # MaxDamage 상대로 학습 (타입 전략 압박 강화)
-python train.py --opponent maxdamage
+python train.py --phase 2 --load-model models/ppokemon_phase1 --opponent maxdamage
 
 # 스텝 수·병렬 환경 수 지정
-python train.py --timesteps 1000000 --n-envs 4
+python train.py --phase 1 --timesteps 1000000 --n-envs 4
 
-# 저장 경로 지정
-python train.py --save-path models/phase1_v2
+# 저장 경로 직접 지정
+python train.py --phase 2 --load-model models/ppokemon_phase1 --save-path models/phase2_v2
 ```
 
 ### 병렬 학습 구조
@@ -284,14 +286,17 @@ SubprocVecEnv
 ## 평가 실행
 
 ```bash
-# 기본 (100 배틀, random 상대)
-python eval.py
+# Phase 1 평가 (기본: 100 배틀, random 상대)
+python eval.py --phase 1
 
-# 모델 경로 · 상대 · 배틀 수 지정
-python eval.py --model models/ppokemon_phase1 --opponent maxdamage --n-battles 50
+# Phase 2 평가
+python eval.py --phase 2
+
+# 모델 경로 · 상대 · 배틀 수 직접 지정
+python eval.py --phase 2 --model models/ppokemon_phase2 --opponent maxdamage --n-battles 50
 
 # 턴별 상세 출력
-python eval.py --verbose
+python eval.py --phase 1 --verbose
 ```
 
 ### 출력 예시
@@ -381,17 +386,30 @@ ruff check --fix .
 
 ---
 
-## Phase 1 기술 구성
+## 기술 구성 (페이즈별)
 
-각 아르세우스는 기술 4슬롯으로 구성됩니다.
+모든 기술은 `data/mods/ppokemon/moves.ts`로 표준화됩니다 (견제기 90 BP / 100% acc / 부가효과 없음).
+
+### Phase 1 — 완료 ✓ (vs Random/MaxDamage 83~90% 승률 달성)
 
 | 슬롯 | 종류 | 설명 |
 |------|------|------|
 | 0 | 자속기 (STAB) | Judgment — 자신의 타입으로 위력 × 1.5 |
-| 1 | 견제기 (coverage) | 다른 타입 공격기 |
-| 2 | 견제기 (coverage) | 다른 타입 공격기 |
-| 3 | 선공기 (priority) | Extreme Speed — 위력 낮지만 항상 선제 |
+| 1~2 | 견제기 (coverage) × 2 | 다른 타입 공격기 |
+| 3 | 선공기 (priority) | Extreme Speed |
+
+각 아르세우스는 **견제기로 커버 불가능한 약점을 1개 이상** 남겨 교체 전략 학습을 유도합니다.
+
+### Phase 2 — 진행 중 🔄
+
+| 슬롯 | 종류 | 설명 |
+|------|------|------|
+| 0 | 자속기 (STAB) | Judgment |
+| 1~3 | 견제기 (coverage) × 3 | 다른 타입 공격기 (선공기 제거) |
+
+Phase 1 가중치를 `MaskablePPO.load()`로 그대로 이어받아 전이학습합니다.
+관측 차원(312)이 고정되어 있어 가중치 재사용이 가능합니다.
 
 에이전트가 학습해야 하는 전략 결정:
 1. **기술 선택**: 견제기로 상대 약점을 찌를 수 있으면 교체 없이도 이득
-2. **교체 선택**: 견제기로도 약점을 찌를 수 없을 때 더 유리한 포켓몬으로 교체
+2. **교체 선택**: 견제기 3개로도 커버 불가한 약점이 나오면 더 유리한 포켓몬으로 교체

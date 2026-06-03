@@ -8,6 +8,10 @@
   poke-env가 팀 딕셔너리에서 3마리를 하나로 합쳐 available_moves=[]가 된다.
   각 폼에 고유 닉네임(예: arceusfire)을 부여하면 ident가 'p1: arceusfire'처럼
   달라져 poke-env가 각 포켓몬을 독립적으로 추적할 수 있다.
+
+기술 구성 원칙 (Phase 2 기준):
+  자속기(Judgment) × 1  +  견제기(coverage) × 3
+  각 아르세우스마다 불리 매칭 중 최소 1개는 견제기로 커버 불가 → 교체 강제.
 """
 
 from __future__ import annotations
@@ -19,10 +23,18 @@ from poke_env.teambuilder import Teambuilder
 N_POKEMON_TEAM: int = 3  # 3v3 배틀 팀 크기
 
 # ---------------------------------------------------------------------------
-# Phase 1 — 아르세우스 9종 개별 스펙
+# Phase 1 — 아르세우스 9종 (인덱스 0~8)
 # ---------------------------------------------------------------------------
-# 형식: "닉네임 (종) @ 아이템" — 닉네임이 배틀 ident로 사용된다.
-# 기술 구성: 자속기(STAB) × 1, 견제기(coverage) × 2, 선공기(priority) × 1
+# 불리 타입 → 견제기 커버 → 교체 강제(미커버)
+#   arceusfire     : 물/바위 커버,  땅   미커버
+#   arceuswater    : 풀    커버,  전기 미커버
+#   arceusgrass    : 불꽃/비행/독 커버, 얼음/벌레 미커버
+#   arceuselectric : (유틸 견제기),  땅   미커버
+#   arceusground   : 물/얼음 커버,  풀   미커버
+#   arceusflying   : 얼음/바위 커버, 전기 미커버
+#   arceusrock     : 물/풀/격투/강철 커버, 땅 미커버
+#   arceusfighting : 비행/에스퍼 커버, 페어리 미커버
+#   arceusice      : 불꽃/바위/강철 커버, 격투 미커버
 
 POKEMON_SPECS: dict[str, str] = {
     "arceusfire": """
@@ -31,9 +43,9 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Aura Sphere
 - Thunderbolt
-- Extreme Speed
+- Aura Sphere
+- Crunch
 """,
     "arceuswater": """
 arceuswater (Arceus-Water) @ Splash Plate
@@ -41,9 +53,9 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Earthpower
+- Ice Beam
 - Aura Sphere
-- Extreme Speed
+- Shadow Ball
 """,
     "arceusgrass": """
 arceusgrass (Arceus-Grass) @ Meadow Plate
@@ -52,8 +64,8 @@ EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
 - Surf
-- Earthpower
-- Extreme Speed
+- Thunderbolt
+- Psychic
 """,
     "arceuselectric": """
 arceuselectric (Arceus-Electric) @ Zap Plate
@@ -62,8 +74,8 @@ EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
 - Flamethrower
-- Air Slash
-- Extreme Speed
+- Aura Sphere
+- Shadow Ball
 """,
     "arceusground": """
 arceusground (Arceus-Ground) @ Earth Plate
@@ -71,9 +83,9 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Power Gem
+- Thunderbolt
 - Aura Sphere
-- Extreme Speed
+- Shadow Ball
 """,
     "arceusflying": """
 arceusflying (Arceus-Flying) @ Sky Plate
@@ -83,7 +95,7 @@ Hardy Nature
 - Judgment
 - Flamethrower
 - Aura Sphere
-- Extreme Speed
+- Shadow Ball
 """,
     "arceusrock": """
 arceusrock (Arceus-Rock) @ Stone Plate
@@ -91,9 +103,9 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Earthpower
-- Ice Beam
-- Extreme Speed
+- Thunderbolt
+- Flamethrower
+- Psychic
 """,
     "arceusfighting": """
 arceusfighting (Arceus-Fighting) @ Fist Plate
@@ -101,9 +113,9 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Earthpower
-- Flamethrower
-- Extreme Speed
+- Thunderbolt
+- Shadow Ball
+- Earth Power
 """,
     "arceusice": """
 arceusice (Arceus-Ice) @ Icicle Plate
@@ -111,20 +123,113 @@ Ability: Multitype
 EVs: 252 Atk / 252 SpA / 4 Spe
 Hardy Nature
 - Judgment
-- Thunderbolt
-- Energy Ball
-- Extreme Speed
+- Surf
+- Earth Power
+- Shadow Ball
 """,
+    # -------------------------------------------------------------------------
     # Phase 2 추가분 (인덱스 9~17)
-    # "arceus": """TODO""",
-    # "arceuspoison": """TODO""",
-    # "arceuspsychic": """TODO""",
-    # "arceusbug": """TODO""",
-    # "arceusghost": """TODO""",
-    # "arceusdragon": """TODO""",
-    # "arceusdark": """TODO""",
-    # "arceussteel": """TODO""",
-    # "arceusfairy": """TODO""",
+    # -------------------------------------------------------------------------
+    # 노말 아르세우스: 플레이트 없음 → Multitype 유지, Judgment = 노말
+    #   불리: 격투  /  견제기 없음 → 격투 미커버 (전체 커버 불가)
+    "arceus": """
+arceus (Arceus)
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Flamethrower
+- Shadow Ball
+- Thunderbolt
+""",
+    # 불리: 땅/에스퍼  /  얼음→땅 커버,  에스퍼 미커버
+    "arceuspoison": """
+arceuspoison (Arceus-Poison) @ Toxic Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Ice Beam
+- Flamethrower
+- Meteor Mash
+""",
+    # 불리: 불꽃/비행/바위  /  물→불꽃·바위 커버,  비행 미커버
+    "arceusbug": """
+arceusbug (Arceus-Bug) @ Insect Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Surf
+- Shadow Ball
+- Psychic
+""",
+    # 불리: 악  /  견제기 없음 → 악 미커버 (고스트는 악 타입 기술에 면역 없음)
+    "arceusghost": """
+arceusghost (Arceus-Ghost) @ Spooky Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Ice Beam
+- Thunderbolt
+- Earth Power
+""",
+    # 불리: 얼음/페어리  /  불꽃→얼음 커버,  페어리 미커버
+    "arceusdragon": """
+arceusdragon (Arceus-Dragon) @ Draco Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Flamethrower
+- Thunderbolt
+- Shadow Ball
+""",
+    # 불리: 격투/벌레/페어리  /  불꽃→벌레·에스퍼→격투 커버,  페어리 미커버
+    "arceusdark": """
+arceusdark (Arceus-Dark) @ Dread Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Flamethrower
+- Psychic
+- Thunderbolt
+""",
+    # 불리: 불꽃/격투/땅  /  물→불꽃·땅 커버,  격투 미커버
+    "arceussteel": """
+arceussteel (Arceus-Steel) @ Iron Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Surf
+- Crunch
+- Ice Beam
+""",
+    # 불리: 벌레/고스트/악  /  불꽃→벌레·격투→악 커버,  고스트 미커버
+    "arceuspsychic": """
+arceuspsychic (Arceus-Psychic) @ Mind Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Flamethrower
+- Aura Sphere
+- Thunderbolt
+""",
+    # 불리: 독/강철  /  불꽃→강철 커버,  독 미커버
+    "arceusfairy": """
+arceusfairy (Arceus-Fairy) @ Pixie Plate
+Ability: Multitype
+EVs: 252 Atk / 252 SpA / 4 Spe
+Hardy Nature
+- Judgment
+- Flamethrower
+- Thunderbolt
+- Shadow Ball
+""",
 }
 
 

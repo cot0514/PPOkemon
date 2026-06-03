@@ -33,7 +33,7 @@ PHASE1_POKEMON: list[str] = [
 # ---------------------------------------------------------------------------
 
 PHASE2_EXTRA_POKEMON: list[str] = [
-    "arceusnormal",     # 9
+    "arceus",           # 9  (노말 폼: PS에서 "Arceus" → poke-env "arceus")
     "arceuspoison",     # 10
     "arceusbug",        # 11
     "arceusghost",      # 12

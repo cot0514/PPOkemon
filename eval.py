@@ -4,10 +4,10 @@
 타입 상황별 행동 패턴과 승률을 분석한다.
 
 사용법:
-    python eval.py                                        # 기본값 (100 배틀)
-    python eval.py --model models/ppokemon_phase1        # 모델 경로 지정
-    python eval.py --opponent maxdamage --n-battles 50   # MaxDamage 상대
-    python eval.py --verbose                             # 배틀별 상세 출력
+    python eval.py                                              # 기본값 Phase 1 (100 배틀)
+    python eval.py --phase 2 --model models/ppokemon_phase2    # Phase 2 평가
+    python eval.py --opponent maxdamage --n-battles 50         # MaxDamage 상대
+    python eval.py --verbose                                   # 배틀별 상세 출력
 """
 
 from __future__ import annotations
@@ -21,18 +21,17 @@ from poke_env.ps_client.server_configuration import LocalhostServerConfiguration
 from sb3_contrib import MaskablePPO
 
 from agents.opponents import MaxDamageOpponent, RandomPoolOpponent
-from data.pokemon_pool import PHASE1_POKEMON
+from data.pokemon_pool import PHASE1_POKEMON, PHASE2_POKEMON
 from data.teams import RandomPoolTeambuilder
-from data.type_chart import PHASE1_TYPES, SUPER_EFFECTIVE, matchup_value, species_to_type
+from data.type_chart import SUPER_EFFECTIVE, matchup_value, species_to_type
 from envs.env import PPOkemonEnv
 from envs.reward import RewardConfig
 from envs.spaces import N_MOVES
 from poke_env.environment import PokemonType
 
-BATTLE_FORMAT = "gen9ppokemonphase1"
-
-# PokemonType → 한국어 표시용
+# PokemonType → 한국어 표시용 (Phase 1 / Phase 2 공용)
 _TYPE_KR: dict[PokemonType, str] = {
+    PokemonType.NORMAL:   "노말",
     PokemonType.FIRE:     "불꽃",
     PokemonType.WATER:    "물",
     PokemonType.GRASS:    "풀",
@@ -42,9 +41,29 @@ _TYPE_KR: dict[PokemonType, str] = {
     PokemonType.ROCK:     "바위",
     PokemonType.FIGHTING: "격투",
     PokemonType.ICE:      "얼음",
+    PokemonType.POISON:   "독",
+    PokemonType.BUG:      "벌레",
+    PokemonType.GHOST:    "고스트",
+    PokemonType.DRAGON:   "드래곤",
+    PokemonType.DARK:     "악",
+    PokemonType.STEEL:    "강철",
+    PokemonType.PSYCHIC:  "에스퍼",
+    PokemonType.FAIRY:    "페어리",
 }
 
-_ = PHASE1_TYPES  # type_chart import 사용 확인용
+# 페이즈별 설정
+_PHASE_CONFIG: dict[int, dict] = {
+    1: {
+        "battle_format": "gen9ppokemonphase1",
+        "pokemon_pool": PHASE1_POKEMON,
+        "model_path": "models/ppokemon_phase1",
+    },
+    2: {
+        "battle_format": "gen9ppokemonphase2",
+        "pokemon_pool": PHASE2_POKEMON,
+        "model_path": "models/ppokemon_phase2",
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -69,31 +88,31 @@ def matchup_label(species_mine: str, species_opp: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def make_eval_env(opponent_type: str) -> PPOkemonEnv:
+def make_eval_env(opponent_type: str, battle_format: str, pokemon_pool: list[str]) -> PPOkemonEnv:
     opp_cfg = AccountConfiguration("EvalOpp", None)
-    opp_tb = RandomPoolTeambuilder(PHASE1_POKEMON)
+    opp_tb = RandomPoolTeambuilder(pokemon_pool)
     if opponent_type == "maxdamage":
         opponent: RandomPoolOpponent | MaxDamageOpponent = MaxDamageOpponent(
             account_configuration=opp_cfg,
             server_configuration=LocalhostServerConfiguration,
-            battle_format=BATTLE_FORMAT,
+            battle_format=battle_format,
             team=opp_tb,
         )
     else:
         opponent = RandomPoolOpponent(
             account_configuration=opp_cfg,
             server_configuration=LocalhostServerConfiguration,
-            battle_format=BATTLE_FORMAT,
+            battle_format=battle_format,
             team=opp_tb,
         )
 
     return PPOkemonEnv(
-        teambuilder=RandomPoolTeambuilder(PHASE1_POKEMON),
+        teambuilder=RandomPoolTeambuilder(pokemon_pool),
         reward_config=RewardConfig(),
         opponent=opponent,
         account_configuration=AccountConfiguration("EvalAgent", None),
         server_configuration=LocalhostServerConfiguration,
-        battle_format=BATTLE_FORMAT,
+        battle_format=battle_format,
         start_challenging=True,
     )
 
@@ -104,10 +123,15 @@ def make_eval_env(opponent_type: str) -> PPOkemonEnv:
 
 
 def evaluate(args: argparse.Namespace) -> None:
-    print(f"모델 로드: {args.model}")
-    model = MaskablePPO.load(args.model)
+    cfg = _PHASE_CONFIG[args.phase]
+    battle_format: str = cfg["battle_format"]
+    pokemon_pool: list[str] = cfg["pokemon_pool"]
+    model_path: str = args.model or cfg["model_path"]
 
-    env = make_eval_env(args.opponent)
+    print(f"Phase {args.phase} | 포맷: {battle_format} | 모델: {model_path}")
+    model = MaskablePPO.load(model_path)
+
+    env = make_eval_env(args.opponent, battle_format, pokemon_pool)
     time.sleep(3)
     print(f"환경 준비 완료. {args.n_battles}배틀 시작.\n")
 
@@ -258,7 +282,14 @@ def evaluate(args: argparse.Namespace) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="PPOkemon 모델 평가")
-    p.add_argument("--model", default="models/ppokemon_phase1", help="모델 경로")
+    p.add_argument(
+        "--phase",
+        type=int,
+        choices=[1, 2],
+        default=1,
+        help="평가 페이즈 (1 또는 2)",
+    )
+    p.add_argument("--model", default=None, help="모델 경로 (기본: 페이즈별 자동)")
     p.add_argument(
         "--opponent",
         choices=["random", "maxdamage"],

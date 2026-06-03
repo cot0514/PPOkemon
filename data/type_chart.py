@@ -1,4 +1,4 @@
-"""Phase 1 타입 데이터 및 상성 유틸리티.
+"""타입 데이터 및 상성 유틸리티 (Phase 1 / Phase 2 공용).
 
 spaces.py, env.py, eval.py에서 공통으로 사용한다.
 
@@ -55,20 +55,79 @@ PHASE1_TYPES: list[PokemonType] = [
 
 N_PHASE1_TYPES: int = len(PHASE1_TYPES)  # 9
 
+# ── Phase 2 타입 18개 = ALL_TYPES ─────────────────────────────────────────────
+PHASE2_TYPES: list[PokemonType] = ALL_TYPES
+
+N_PHASE2_TYPES: int = len(PHASE2_TYPES)  # 18
+
 # 하위 호환용 별칭 (기존 코드에서 TYPE_INDEX를 사용하는 곳은 ALL_TYPE_INDEX로 교체 권장)
 TYPE_INDEX: dict[PokemonType, int] = ALL_TYPE_INDEX
 
-# 공격 타입 → 2배 피해를 주는 방어 타입 목록 (Phase 1 내에서만)
+# 공격 타입 → 2배 피해를 주는 방어 타입 목록 (Phase 2 전체 18타입 기준)
+# Phase 1 항목도 Phase 2 신규 방어 타입을 포함해 갱신함.
+#   GROUND  : POISON, STEEL 추가
+#   FLYING  : BUG 추가
+#   ROCK    : BUG 추가
+#   FIGHTING: NORMAL, DARK, STEEL 추가
+#   ICE     : DRAGON 추가
 SUPER_EFFECTIVE: dict[PokemonType, list[PokemonType]] = {
-    PokemonType.FIRE:     [PokemonType.GRASS, PokemonType.ICE],
-    PokemonType.WATER:    [PokemonType.FIRE, PokemonType.GROUND, PokemonType.ROCK],
-    PokemonType.GRASS:    [PokemonType.WATER, PokemonType.GROUND, PokemonType.ROCK],
-    PokemonType.ELECTRIC: [PokemonType.WATER, PokemonType.FLYING],
-    PokemonType.GROUND:   [PokemonType.FIRE, PokemonType.ELECTRIC, PokemonType.ROCK],
-    PokemonType.FLYING:   [PokemonType.GRASS, PokemonType.FIGHTING],
-    PokemonType.ROCK:     [PokemonType.FIRE, PokemonType.FLYING, PokemonType.ICE],
-    PokemonType.FIGHTING: [PokemonType.ROCK, PokemonType.ICE],
-    PokemonType.ICE:      [PokemonType.GRASS, PokemonType.GROUND, PokemonType.FLYING],
+    # Phase 1 타입 (방어 타입 범위 확장)
+    PokemonType.FIRE:     [
+        PokemonType.GRASS, PokemonType.ICE, PokemonType.BUG, PokemonType.STEEL,
+    ],
+    PokemonType.WATER:    [
+        PokemonType.FIRE, PokemonType.GROUND, PokemonType.ROCK,
+    ],
+    PokemonType.GRASS:    [
+        PokemonType.WATER, PokemonType.GROUND, PokemonType.ROCK,
+    ],
+    PokemonType.ELECTRIC: [
+        PokemonType.WATER, PokemonType.FLYING,
+    ],
+    PokemonType.GROUND:   [
+        PokemonType.FIRE, PokemonType.ELECTRIC,
+        PokemonType.POISON, PokemonType.ROCK, PokemonType.STEEL,
+    ],
+    PokemonType.FLYING:   [
+        PokemonType.GRASS, PokemonType.FIGHTING, PokemonType.BUG,
+    ],
+    PokemonType.ROCK:     [
+        PokemonType.FIRE, PokemonType.ICE, PokemonType.FLYING, PokemonType.BUG,
+    ],
+    PokemonType.FIGHTING: [
+        PokemonType.NORMAL, PokemonType.ICE,
+        PokemonType.ROCK, PokemonType.DARK, PokemonType.STEEL,
+    ],
+    PokemonType.ICE:      [
+        PokemonType.GRASS, PokemonType.GROUND,
+        PokemonType.FLYING, PokemonType.DRAGON,
+    ],
+    # Phase 2 신규 타입
+    PokemonType.POISON:   [
+        PokemonType.GRASS, PokemonType.FAIRY,
+    ],
+    PokemonType.BUG:      [
+        PokemonType.GRASS, PokemonType.PSYCHIC, PokemonType.DARK,
+    ],
+    PokemonType.GHOST:    [
+        PokemonType.GHOST, PokemonType.PSYCHIC,
+    ],
+    PokemonType.DRAGON:   [
+        PokemonType.DRAGON,
+    ],
+    PokemonType.DARK:     [
+        PokemonType.GHOST, PokemonType.PSYCHIC,
+    ],
+    PokemonType.STEEL:    [
+        PokemonType.ICE, PokemonType.ROCK, PokemonType.FAIRY,
+    ],
+    PokemonType.PSYCHIC:  [
+        PokemonType.FIGHTING, PokemonType.POISON,
+    ],
+    PokemonType.FAIRY:    [
+        PokemonType.FIGHTING, PokemonType.DRAGON, PokemonType.DARK,
+    ],
+    # NORMAL: 2배 타입 없음 → 키 자체를 생략 (get 시 [] 반환)
 }
 
 # 아르세우스 종 이름 → PokemonType (종 이름 정규화: 소문자, 하이픈·공백 제거)
@@ -82,6 +141,16 @@ ARCEUS_SPECIES_TYPE: dict[str, PokemonType] = {
     "arceusrock":     PokemonType.ROCK,
     "arceusfighting": PokemonType.FIGHTING,
     "arceusice":      PokemonType.ICE,
+    # Phase 2 추가분
+    "arceus":         PokemonType.NORMAL,
+    "arceuspoison":   PokemonType.POISON,
+    "arceusbug":      PokemonType.BUG,
+    "arceusghost":    PokemonType.GHOST,
+    "arceusdragon":   PokemonType.DRAGON,
+    "arceusdark":     PokemonType.DARK,
+    "arceussteel":    PokemonType.STEEL,
+    "arceuspsychic":  PokemonType.PSYCHIC,
+    "arceusfairy":    PokemonType.FAIRY,
 }
 
 
